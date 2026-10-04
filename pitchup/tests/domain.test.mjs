@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { seed, summary, stateFor, validateActivity, validateProfile } from '../server/domain.mjs';
 const now = new Date('2026-10-04T10:00:00Z');
-test('weekly facts count recovery, keep bowling separate, and exclude old or future sessions',()=>{
+test('weekly facts keep bowling separate and exclude old or future sessions',()=>{
  const db=seed(now);db.activities.push({...db.activities[0],date:'2026-09-20'}, {...db.activities[0],date:'2026-10-05'});
- const s=summary(db.activities,db.profile,now);assert.equal(s.sessions,3);assert.equal(s.minutes,95);assert.equal(s.bowling,48);assert.equal(s.recovery,1);
+ const s=summary(db.activities,db.profile,now);assert.equal(s.sessions,3);assert.equal(s.minutes,95);assert.equal(s.bowling,48);
 });
 test('new activity always starts private, even when caller requests publication',()=>{
  const a=validateActivity({type:'Bowling',title:'Nets',date:'2026-10-04',duration:30,balls:36,effort:5,visibility:'public',shareWithCoach:true},now);
@@ -17,7 +17,7 @@ test('rejects impossible dates, future dates, negative values, fractional counts
 test('public state excludes private sessions, club posts, raw measurements, reflections, and goals',()=>{
  const db=seed(now);const state=stateFor(db,'visitor');assert.deepEqual(state.activities,[]);assert.equal(state.summary,null);assert.equal(state.profile.goal,undefined);
  assert.ok(state.posts.every(p=>p.visibility==='public'));
- const serialized=JSON.stringify(state);assert.ok(!serialized.includes('Private recovery reflection'));assert.ok(!serialized.includes('duration'));assert.ok(!serialized.includes('effort'));
+ const serialized=JSON.stringify(state);assert.ok(!serialized.includes('Private strength session reflection'));assert.ok(!serialized.includes('duration'));assert.ok(!serialized.includes('effort'));
 });
 test('coach sees only opted-in measurements and never private reflections',()=>{
  const db=seed(now);const state=stateFor(db,'coach');assert.equal(state.activities.length,2);assert.ok(state.activities.every(a=>a.notes===undefined));assert.ok(!state.activities.some(a=>a.id==='seed-2'));
