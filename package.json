@@ -1,0 +1,8 @@
+{
+  "name": "ignyte-icc-root",
+  "private": true,
+  "scripts": {
+    "build": "cd pitchup && npm run build",
+    "dev": "cd pitchup && npm run dev"
+  }
+}

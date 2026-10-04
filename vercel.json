@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd pitchup && npm run build",
+  "outputDirectory": "pitchup/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

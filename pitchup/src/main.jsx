@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { seed, stateFor, validateActivity, validateProfile } from '../server/domain.mjs';
 import '@fontsource/dm-sans/latin-400.css';
 import '@fontsource/dm-sans/latin-500.css';
 import '@fontsource/dm-sans/latin-600.css';
@@ -15,7 +16,125 @@ const typeClass = t => t.toLowerCase();
 const niceDate = d => new Date(d+'T12:00:00Z').toLocaleDateString('en-IN',{day:'numeric',month:'short'});
 const today = () => new Date().toISOString().slice(0,10);
 const ErrorContext = React.createContext('');
-async function api(path,method='GET',payload) { const response=await fetch('/api'+path,{method,headers:payload?{'Content-Type':'application/json'}:{},body:payload?JSON.stringify(payload):undefined}); const value=await response.json(); if(!response.ok)throw new Error(value.error||'Something went wrong.');return value; }
+
+let localDb = null;
+function getLocalDb() {
+  if (!localDb) {
+    try {
+      const saved = localStorage.getItem('pitchup_db');
+      localDb = saved ? JSON.parse(saved) : seed();
+    } catch {
+      localDb = seed();
+    }
+  }
+  return localDb;
+}
+function saveLocalDb() {
+  try {
+    localStorage.setItem('pitchup_db', JSON.stringify(localDb));
+  } catch {}
+}
+let localRole = 'athlete';
+
+async function localApi(path, method, payload) {
+  const db = getLocalDb();
+  if (method === 'GET' && path === '/state') return stateFor(db, localRole);
+  if (method === 'POST' && path === '/perspective') {
+    if (['athlete','coach','visitor'].includes(payload?.role)) localRole = payload.role;
+    return stateFor(db, localRole);
+  }
+  if (method === 'POST' && path.match(/^\/activities\/[^/]+\/review$/)) {
+    if (localRole !== 'coach') throw new Error('Switch to the demo coach perspective to review.');
+    const id = path.split('/')[2];
+    const a = db.activities.find(x => x.id === id);
+    if (!a || !a.shareWithCoach) throw new Error('Session not available to this coach.');
+    a.review = 'Reviewed in the fictional demo';
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'GET' && path === '/export') {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    return { profile: db.profile, activities: db.activities, exportedAt: new Date().toISOString(), demo: true };
+  }
+  if (method === 'POST' && path === '/activities') {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    db.activities.push(validateActivity(payload));
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'PATCH' && path === '/profile') {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    db.profile = validateProfile(payload);
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'PATCH' && path.match(/^\/activities\/[^/]+$/)) {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    const a = db.activities.find(x => x.id === path.split('/')[2]);
+    if (!a) throw new Error('Session not found.');
+    if (payload.visibility !== undefined) {
+      if (!['private','club','public'].includes(payload.visibility)) throw new Error('Choose a valid audience.');
+      a.visibility = payload.visibility;
+    }
+    if (payload.shareWithCoach !== undefined) {
+      if (typeof payload.shareWithCoach !== 'boolean') throw new Error('Invalid coach permission.');
+      a.shareWithCoach = payload.shareWithCoach;
+    }
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'DELETE' && path.match(/^\/activities\/[^/]+$/)) {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    db.activities = db.activities.filter(x => x.id !== path.split('/')[2]);
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'POST' && path === '/cheer') {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    if (!stateFor(db, localRole).posts.some(p => p.id === payload.id)) throw new Error('Post not found.');
+    db.cheers = db.cheers.includes(payload.id) ? db.cheers.filter(x => x !== payload.id) : [...db.cheers, payload.id];
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'POST' && path === '/challenge') {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    db.challengeJoined = !db.challengeJoined;
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  if (method === 'POST' && path === '/report') {
+    if (localRole !== 'athlete') throw new Error('This action is only available in your athlete perspective.');
+    if (!stateFor(db, localRole).posts.some(p => p.id === payload.id)) throw new Error('Post not found.');
+    if (!['Unwanted contact','Inappropriate content','Other concern'].includes(payload.reason)) throw new Error('Select a reason.');
+    db.reports.push({ id: payload.id, reason: payload.reason, date: new Date().toISOString() });
+    db.hiddenPosts.push(payload.id);
+    saveLocalDb();
+    return stateFor(db, localRole);
+  }
+  return stateFor(db, localRole);
+}
+
+async function api(path, method = 'GET', payload) {
+  try {
+    const response = await fetch('/api' + path, {
+      method,
+      headers: payload ? { 'Content-Type': 'application/json' } : {},
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok && (contentType.includes('text/html') || response.status === 404)) {
+      return await localApi(path, method, payload);
+    }
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || 'Something went wrong.');
+    return value;
+  } catch (err) {
+    if (err.message && (err.message.includes('Unexpected token') || err.message.includes('Failed to fetch') || err.message.includes('JSON') || err.message.includes('is not valid'))) {
+      return await localApi(path, method, payload);
+    }
+    throw err;
+  }
+}
 function Badge({children,tone=''}){return <span className={'badge '+tone}>{children}</span>}
 function TypeIcon({type}) {const Icon=iconFor[type]||Activity;return <span className={'type-icon '+typeClass(type)}><Icon size={20}/></span>}
 function PitchArt(){return <svg className="pitch-art" viewBox="0 0 430 270" aria-hidden="true"><g fill="none" stroke="currentColor"><ellipse cx="240" cy="138" rx="164" ry="105" strokeWidth="1"/><ellipse cx="240" cy="138" rx="121" ry="78" strokeDasharray="4 6"/><path d="M206 84h67v110h-67z"/><path d="M195 101h90M195 175h90"/><path d="M231 89v11m8-11v11m8-11v11M231 176v12m8-12v12m8-12v12" strokeWidth="3"/><path d="M242 165Q280 91 348 65" strokeWidth="2" strokeDasharray="5 5"/></g><circle cx="349" cy="64" r="10" fill="#d7f17b"/><path d="M344 57q-2 8 10 14" fill="none" stroke="#203d2e" strokeWidth="1.5"/><g transform="translate(94 42) rotate(-28)"><rect width="17" height="63" rx="5" fill="#d7f17b"/><rect x="5" y="-25" width="7" height="28" rx="2" fill="#eeeacb"/><path d="M8 7v40" stroke="#9bb956"/></g><circle cx="317" cy="213" r="4" fill="currentColor"/><circle cx="141" cy="192" r="4" fill="currentColor"/><circle cx="189" cy="55" r="4" fill="currentColor"/></svg>}

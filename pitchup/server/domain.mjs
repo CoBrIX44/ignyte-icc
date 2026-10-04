@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+const generateId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
 
 export const TYPES = ['Bowling', 'Batting', 'Fielding', 'Strength', 'Recovery'];
 export function weekStart(date = new Date()) {
@@ -24,7 +24,7 @@ export function validateActivity(input, now = new Date()) {
   if (!TYPES.includes(input.type)) throw new Error('Choose a supported activity.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date ?? '') || Number.isNaN(Date.parse(input.date)) || dateKey(new Date(input.date)) !== input.date || input.date > dateKey(now) || input.date < '2020-01-01') throw new Error('Choose a valid session date from 2020 through today.');
   const title = clean(input.title, 90); if (!title) throw new Error('Give your session a title.');
-  return { id: randomUUID(), type: input.type, title, date: input.date, duration: number(input.duration, 'Duration', 1, 480), balls: ['Bowling','Batting'].includes(input.type) ? number(input.balls, 'Deliveries', 1, 600) : 0, effort: number(input.effort, 'Effort', 1, 10), notes: clean(input.notes, 1500), shareWithCoach: input.shareWithCoach === true, visibility: 'private', review: null, createdAt: now.toISOString() };
+  return { id: generateId(), type: input.type, title, date: input.date, duration: number(input.duration, 'Duration', 1, 480), balls: ['Bowling','Batting'].includes(input.type) ? number(input.balls, 'Deliveries', 1, 600) : 0, effort: number(input.effort, 'Effort', 1, 10), notes: clean(input.notes, 1500), shareWithCoach: input.shareWithCoach === true, visibility: 'private', review: null, createdAt: now.toISOString() };
 }
 export function validateProfile(input) {
   const name = clean(input.name, 60); if (!name) throw new Error('Enter a display name.');
