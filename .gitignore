@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+data/
+**/data/
+test-results/
+**/test-results/
+*.log
+.env*
+.DS_Store
